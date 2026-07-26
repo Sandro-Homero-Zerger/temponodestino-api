@@ -235,7 +235,27 @@ function calculateETA(origin, dest, transport, departureStr) {
   let hours = distance / (speeds[transport] || 100);
   if (transport === 'plane') hours += 3;
   
-  const departureTime = departureStr ? new Date(departureStr) : new Date();
+  let departureTime;
+  if (departureStr) {
+    // CORREÇÃO: Força a data a ser interpretada como horário local
+    const parts = departureStr.split('T');
+    const dateParts = parts[0].split('-');
+    const timeParts = parts[1].split(':');
+    
+    departureTime = new Date(
+      parseInt(dateParts[0]),    // ano
+      parseInt(dateParts[1]) - 1, // mês (0-11)
+      parseInt(dateParts[2]),    // dia
+      parseInt(timeParts[0]),    // hora
+      parseInt(timeParts[1]),    // minuto
+      0                          // segundo
+    );
+  } else {
+    departureTime = new Date();
+  }
+  
+  console.log(`🛫 Partida (local): ${departureTime.toLocaleString('pt-BR')}`);
+  
   const arrivalTime = new Date(departureTime.getTime() + hours * 3600000);
   
   return { departureTime, arrivalTime, distance: Math.round(distance), duration: Math.round(hours * 10) / 10 };
