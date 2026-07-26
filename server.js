@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 
 const app = express();
-const PORT = 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -13,11 +12,11 @@ app.use(express.json());
 const OPENWEATHER_API_KEY = process.env.OPENWEATHER_API_KEY || '';
 
 // =============================================
-// CACHES (Performance e Economia de API)
+// CACHES
 // =============================================
-const geoCache = new Map();           // Cache de coordenadas (permanente)
-const weatherCache = new Map();       // Cache de previsão (30 minutos)
-const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos em milissegundos
+const geoCache = new Map();
+const weatherCache = new Map();
+const CACHE_DURATION = 30 * 60 * 1000;
 
 // =============================================
 // DICAS TRADUZIDAS (8 idiomas)
@@ -35,7 +34,7 @@ const tips = {
   'en': {
     storm: 'Possible thunderstorm. Avoid open areas and bring an umbrella.',
     rain: 'Rain expected. A compact umbrella is recommended.',
-    snow: 'Snow expected. Wear warm clothes, gloves and a scarf. Watch out for ice.',
+    snow: 'Snow expected. Wear warm clothes, gloves and a scarf.',
     cold: 'Cold. Bring a heavy coat and gloves.',
     mild: 'Mild temperature. A light jacket is enough.',
     hot: 'Intense heat. Stay hydrated and use sunscreen.',
@@ -98,10 +97,64 @@ const tips = {
 };
 
 // =============================================
-// GEOLOCALIZAÇÃO VIA OPENSTREETMAP (COM CACHE)
+// BANCO LOCAL DE CIDADES FAMOSAS
+// =============================================
+const famousCities = {
+  'sao paulo': { lat: -23.5505, lon: -46.6333, name: 'São Paulo' },
+  'sp': { lat: -23.5505, lon: -46.6333, name: 'São Paulo' },
+  'rio de janeiro': { lat: -22.9068, lon: -43.1729, name: 'Rio de Janeiro' },
+  'brasilia': { lat: -15.7975, lon: -47.8919, name: 'Brasília' },
+  'belo horizonte': { lat: -19.9167, lon: -43.9345, name: 'Belo Horizonte' },
+  'salvador': { lat: -12.9714, lon: -38.5014, name: 'Salvador' },
+  'fortaleza': { lat: -3.7172, lon: -38.5433, name: 'Fortaleza' },
+  'curitiba': { lat: -25.4297, lon: -49.2711, name: 'Curitiba' },
+  'porto alegre': { lat: -30.0346, lon: -51.2177, name: 'Porto Alegre' },
+  'recife': { lat: -8.0476, lon: -34.8770, name: 'Recife' },
+  'manaus': { lat: -3.1190, lon: -60.0217, name: 'Manaus' },
+  'nova york': { lat: 40.7128, lon: -74.0060, name: 'Nova York' },
+  'new york': { lat: 40.7128, lon: -74.0060, name: 'Nova York' },
+  'londres': { lat: 51.5074, lon: -0.1278, name: 'Londres' },
+  'london': { lat: 51.5074, lon: -0.1278, name: 'Londres' },
+  'paris': { lat: 48.8566, lon: 2.3522, name: 'Paris' },
+  'madri': { lat: 40.4168, lon: -3.7038, name: 'Madri' },
+  'madrid': { lat: 40.4168, lon: -3.7038, name: 'Madri' },
+  'barcelona': { lat: 41.3874, lon: 2.1686, name: 'Barcelona' },
+  'lisboa': { lat: 38.7223, lon: -9.1393, name: 'Lisboa' },
+  'berlim': { lat: 52.5200, lon: 13.4050, name: 'Berlim' },
+  'berlin': { lat: 52.5200, lon: 13.4050, name: 'Berlim' },
+  'roma': { lat: 41.9028, lon: 12.4964, name: 'Roma' },
+  'rome': { lat: 41.9028, lon: 12.4964, name: 'Roma' },
+  'toquio': { lat: 35.6762, lon: 139.6503, name: 'Tóquio' },
+  'tokyo': { lat: 35.6762, lon: 139.6503, name: 'Tóquio' },
+  'sydney': { lat: -33.8688, lon: 151.2093, name: 'Sydney' },
+  'dubai': { lat: 25.2048, lon: 55.2708, name: 'Dubai' },
+  'buenos aires': { lat: -34.6037, lon: -58.3816, name: 'Buenos Aires' },
+  'santiago': { lat: -33.4489, lon: -70.6693, name: 'Santiago' },
+  'lima': { lat: -12.0464, lon: -77.0428, name: 'Lima' },
+  'miami': { lat: 25.7617, lon: -80.1918, name: 'Miami' },
+  'los angeles': { lat: 34.0522, lon: -118.2437, name: 'Los Angeles' },
+  'toronto': { lat: 43.6532, lon: -79.3832, name: 'Toronto' },
+  'amsterdam': { lat: 52.3676, lon: 4.9041, name: 'Amsterdã' },
+  'moscou': { lat: 55.7558, lon: 37.6173, name: 'Moscou' },
+  'moscow': { lat: 55.7558, lon: 37.6173, name: 'Moscou' },
+  'pequim': { lat: 39.9042, lon: 116.4074, name: 'Pequim' },
+  'beijing': { lat: 39.9042, lon: 116.4074, name: 'Pequim' },
+  'xangai': { lat: 31.2304, lon: 121.4737, name: 'Xangai' },
+  'shanghai': { lat: 31.2304, lon: 121.4737, name: 'Xangai' },
+  'cidade do mexico': { lat: 19.4326, lon: -99.1332, name: 'Cidade do México' }
+};
+
+// =============================================
+// GEOLOCALIZAÇÃO (BANCO LOCAL + OPENSTREETMAP)
 // =============================================
 async function geocode(address) {
   const key = address.toLowerCase().trim();
+  
+  if (famousCities[key]) {
+    console.log(`📍 Banco local: ${famousCities[key].name}`);
+    geoCache.set(key, famousCities[key]);
+    return famousCities[key];
+  }
   
   if (geoCache.has(key)) {
     console.log(`📍 Cache: ${geoCache.get(key).name}`);
@@ -110,13 +163,24 @@ async function geocode(address) {
   
   await sleep(1000);
   
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&accept-language=pt`;
+  const countryHints = {
+    'madri': 'Espanha', 'madrid': 'Espanha', 'barcelona': 'Espanha',
+    'paris': 'França', 'londres': 'Reino Unido', 'london': 'Reino Unido',
+    'lisboa': 'Portugal', 'lisbon': 'Portugal',
+    'roma': 'Itália', 'rome': 'Itália',
+    'berlim': 'Alemanha', 'berlin': 'Alemanha'
+  };
+  
+  let query = address;
+  if (countryHints[key]) {
+    query = `${address}, ${countryHints[key]}`;
+  }
+  
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=3&accept-language=pt`;
   
   try {
     const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'TempoNoDestino/1.0 (temponodestino@email.com)'
-      }
+      headers: { 'User-Agent': 'TempoNoDestino/1.0 (temponodestino@email.com)' }
     });
     
     if (!response.ok) return null;
@@ -124,12 +188,12 @@ async function geocode(address) {
     const data = await response.json();
     
     if (data.length > 0) {
+      const best = data.sort((a, b) => parseFloat(b.importance) - parseFloat(a.importance))[0];
       const result = {
-        lat: parseFloat(data[0].lat),
-        lon: parseFloat(data[0].lon),
-        name: data[0].display_name.split(',')[0].trim()
+        lat: parseFloat(best.lat),
+        lon: parseFloat(best.lon),
+        name: best.display_name.split(',')[0].trim()
       };
-      
       geoCache.set(key, result);
       console.log(`📍 OpenStreetMap: ${result.name}`);
       return result;
@@ -146,138 +210,81 @@ function sleep(ms) {
 }
 
 // =============================================
-// CÁLCULO DE FUSO HORÁRIO POR LONGITUDE
+// FUSO HORÁRIO POR LONGITUDE
 // =============================================
 function getTimezoneFromLongitude(lon) {
   const hours = Math.round(lon / 15);
   const sign = hours >= 0 ? '+' : '';
-  const absHours = Math.abs(hours);
-  return `GMT${sign}${absHours}`;
+  return `GMT${sign}${Math.abs(hours)}`;
 }
 
 // =============================================
-// CÁLCULO DE DISTÂNCIA E TEMPO DE VIAGEM
+// DISTÂNCIA E TEMPO DE VIAGEM
 // =============================================
 function getDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function calculateETA(origin, dest, transport, departureStr) {
   const distance = getDistance(origin.lat, origin.lon, dest.lat, dest.lon);
+  const speeds = { plane: 800, train: 200, car: 100 };
+  let hours = distance / (speeds[transport] || 100);
+  if (transport === 'plane') hours += 3;
   
-  let speedKmh;
-  switch (transport) {
-    case 'plane': speedKmh = 800; break;
-    case 'train': speedKmh = 200; break;
-    case 'car':
-    default:     speedKmh = 100; break;
-  }
+  const departureTime = departureStr ? new Date(departureStr) : new Date();
+  const arrivalTime = new Date(departureTime.getTime() + hours * 3600000);
   
-  let hours = distance / speedKmh;
-  
-  if (transport === 'plane') {
-    hours += 3;
-  }
-  
-  let departureTime;
-  if (departureStr) {
-    departureTime = new Date(departureStr);
-  } else {
-    departureTime = new Date();
-  }
-  
-  const arrivalTime = new Date(departureTime.getTime() + hours * 60 * 60 * 1000);
-  
-  return {
-    departureTime,
-    arrivalTime,
-    distance: Math.round(distance),
-    duration: Math.round(hours * 10) / 10
-  };
+  return { departureTime, arrivalTime, distance: Math.round(distance), duration: Math.round(hours * 10) / 10 };
 }
 
 // =============================================
-// PREVISÃO DO TEMPO (COM CACHE DE 30 MINUTOS)
+// PREVISÃO DO TEMPO
 // =============================================
 async function getWeatherAtTime(coords, targetTime) {
   const cacheKey = `${coords.lat.toFixed(2)},${coords.lon.toFixed(2)}`;
-  
   const cached = weatherCache.get(cacheKey);
+  
   if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-    const age = Math.round((Date.now() - cached.timestamp) / 1000);
-    console.log(`🌤️ Cache (${age}s atrás): ${Math.round(cached.data.temp)}°C`);
+    console.log(`🌤️ Cache: ${Math.round(cached.data.temp)}°C`);
     return cached.data;
   }
   
   const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${coords.lat}&lon=${coords.lon}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=pt_br&cnt=40`;
-
+  
   try {
     const response = await fetch(url);
-    
-    if (!response.ok) {
-      if (cached) {
-        console.log('⚠️ API falhou, usando cache expirado');
-        return cached.data;
-      }
-      throw new Error('Erro na API do OpenWeatherMap.');
-    }
-    
+    if (!response.ok) throw new Error('API falhou');
     const data = await response.json();
-
-    if (data.list && data.list.length > 0) {
-      const targetTimestamp = Math.floor(targetTime.getTime() / 1000);
-      let closest = data.list[0];
-      let minDiff = Math.abs(closest.dt - targetTimestamp);
-
-      for (const item of data.list) {
-        const diff = Math.abs(item.dt - targetTimestamp);
-        if (diff < minDiff) {
-          minDiff = diff;
-          closest = item;
-        }
-      }
-
-      const result = {
-        temp: closest.main.temp,
-        feels_like: closest.main.feels_like,
-        weather: closest.weather
-      };
-      
-      weatherCache.set(cacheKey, {
-        data: result,
-        timestamp: Date.now()
-      });
-      
-      console.log(`🌤️ API: ${Math.round(result.temp)}°C`);
-      return result;
-    }
-
-    throw new Error('Dados de previsão não disponíveis.');
     
-  } catch (error) {
-    if (cached) {
-      console.log('⚠️ Erro na API, usando cache expirado');
-      return cached.data;
+    const target = Math.floor(targetTime.getTime() / 1000);
+    let closest = data.list[0];
+    let min = Math.abs(closest.dt - target);
+    
+    for (const item of data.list) {
+      const diff = Math.abs(item.dt - target);
+      if (diff < min) { min = diff; closest = item; }
     }
+    
+    const result = { temp: closest.main.temp, feels_like: closest.main.feels_like, weather: closest.weather };
+    weatherCache.set(cacheKey, { data: result, timestamp: Date.now() });
+    console.log(`🌤️ API: ${Math.round(result.temp)}°C`);
+    return result;
+  } catch (error) {
+    if (cached) return cached.data;
     throw error;
   }
 }
 
 // =============================================
-// FUNÇÕES DE DICA E EMOJI
+// DICAS E EMOJIS
 // =============================================
 function getTipKey(weather) {
   const id = weather.weather[0].id;
   const temp = weather.temp;
-
   if (id >= 200 && id < 300) return 'storm';
   if (id >= 300 && id < 600) return 'rain';
   if (id >= 600 && id < 700) return 'snow';
@@ -288,14 +295,12 @@ function getTipKey(weather) {
 }
 
 function getTip(key, lang) {
-  const langTips = tips[lang] || tips['en'];
-  return langTips[key] || tips['en'][key];
+  return (tips[lang] || tips['en'])[key] || tips['en'][key];
 }
 
 function getWeatherEmoji(id) {
   if (id >= 200 && id < 300) return '⛈️';
-  if (id >= 300 && id < 400) return '🌧️';
-  if (id >= 500 && id < 600) return '🌧️';
+  if (id >= 300 && id < 600) return '🌧️';
   if (id >= 600 && id < 700) return '🌨️';
   if (id >= 700 && id < 800) return '🌫️';
   if (id === 800) return '☀️';
@@ -317,21 +322,14 @@ app.post('/api/previsao', async (req, res) => {
     const coordsOrigin = await geocode(origin);
     const coordsDest = await geocode(destination);
 
-    if (!coordsOrigin) {
-      throw new Error(`Cidade "${origin}" não encontrada.`);
-    }
-    if (!coordsDest) {
-      throw new Error(`Cidade "${destination}" não encontrada.`);
-    }
+    if (!coordsOrigin) throw new Error(`Cidade "${origin}" não encontrada.`);
+    if (!coordsDest) throw new Error(`Cidade "${destination}" não encontrada.`);
 
     const route = calculateETA(coordsOrigin, coordsDest, transport, departure);
     console.log(`⏱️ ${route.distance}km | ${route.duration}h`);
 
     const weather = await getWeatherAtTime(coordsDest, route.arrivalTime);
     console.log(`🌡️ Chegada: ${Math.round(weather.temp)}°C`);
-
-    const tipKey = getTipKey(weather);
-    const tip = getTip(tipKey, lang);
 
     res.json({
       success: true,
@@ -341,46 +339,33 @@ app.post('/api/previsao', async (req, res) => {
       departureTime: route.departureTime.toISOString(),
       arrivalTime: route.arrivalTime.toISOString(),
       timezone: getTimezoneFromLongitude(coordsDest.lon),
-      route: {
-        distance: route.distance,
-        duration: route.duration
-      },
+      route: { distance: route.distance, duration: route.duration },
       weather: {
         temp: Math.round(weather.temp),
         feelsLike: Math.round(weather.feels_like),
         condition: weather.weather[0].description,
         icon: getWeatherEmoji(weather.weather[0].id)
       },
-      tip
+      tip: getTip(getTipKey(weather), lang)
     });
 
   } catch (error) {
     console.error('❌ Erro:', error.message);
-    res.json({
-      success: false,
-      error: error.message
-    });
+    res.json({ success: false, error: error.message });
   }
 });
 
 // =============================================
-// ESTATÍSTICAS DO CACHE
+// ESTATÍSTICAS
 // =============================================
 app.get('/api/stats', (req, res) => {
   res.json({
-    geoCache: {
-      size: geoCache.size,
-      cities: Array.from(geoCache.keys())
-    },
+    geoCache: { size: geoCache.size, cities: Array.from(geoCache.keys()) },
     weatherCache: {
       size: weatherCache.size,
       locations: Array.from(weatherCache.keys()).map(k => {
         const c = weatherCache.get(k);
-        return {
-          key: k,
-          age: Math.round((Date.now() - c.timestamp) / 1000) + 's',
-          temp: Math.round(c.data.temp) + '°C'
-        };
+        return { key: k, age: Math.round((Date.now() - c.timestamp) / 1000) + 's', temp: Math.round(c.data.temp) + '°C' };
       })
     },
     uptime: process.uptime().toFixed(0) + 's'
@@ -388,7 +373,7 @@ app.get('/api/stats', (req, res) => {
 });
 
 // =============================================
-// INICIAR SERVIDOR
+// INICIAR
 // =============================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
@@ -396,7 +381,7 @@ app.listen(PORT, () => {
   console.log(`📍 http://localhost:${PORT}`);
   console.log(`📡 API: http://localhost:${PORT}/api/previsao`);
   console.log(`📊 Stats: http://localhost:${PORT}/api/stats`);
-  console.log('🌍 Geo: OpenStreetMap (cache permanente)');
+  console.log('🌍 Geo: Banco local + OpenStreetMap');
   console.log('🌤️ Previsão: OpenWeatherMap (cache 30min)');
-  console.log('🚀 Pronto para escala!');
+  console.log('🚀 Pronto!');
 });
