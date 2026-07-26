@@ -237,19 +237,16 @@ function calculateETA(origin, dest, transport, departureStr) {
   
   let departureTime;
   if (departureStr) {
-    // Cria a data como hora local (Brasil), não UTC
     const [datePart, timePart] = departureStr.split('T');
     const [year, month, day] = datePart.split('-').map(Number);
     const [hour, minute] = timePart.split(':').map(Number);
-    departureTime = new Date(year, month - 1, day, hour, minute, 0);
+    // Cria data local e converte para UTC manualmente (BRT = UTC-3)
+    departureTime = new Date(Date.UTC(year, month - 1, day, hour + 3, minute, 0));
   } else {
     departureTime = new Date();
   }
   
   const arrivalTime = new Date(departureTime.getTime() + hours * 3600000);
-  
-  console.log(`🛫 Partida: ${departureTime.toLocaleString('pt-BR')}`);
-  console.log(`🛬 Chegada: ${arrivalTime.toLocaleString('pt-BR')}`);
   
   return { departureTime, arrivalTime, distance: Math.round(distance), duration: Math.round(hours * 10) / 10 };
 }
