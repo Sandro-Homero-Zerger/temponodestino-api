@@ -103,13 +103,11 @@ const tips = {
 async function geocode(address) {
   const key = address.toLowerCase().trim();
   
-  // 1. Cache local (instantâneo)
   if (geoCache.has(key)) {
     console.log(`📍 Cache: ${geoCache.get(key).name}`);
     return geoCache.get(key);
   }
   
-  // 2. OpenStreetMap (respeita limite de 1 req/s)
   await sleep(1000);
   
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&accept-language=pt`;
@@ -145,6 +143,16 @@ async function geocode(address) {
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// =============================================
+// CÁLCULO DE FUSO HORÁRIO POR LONGITUDE
+// =============================================
+function getTimezoneFromLongitude(lon) {
+  const hours = Math.round(lon / 15);
+  const sign = hours >= 0 ? '+' : '';
+  const absHours = Math.abs(hours);
+  return `GMT${sign}${absHours}`;
 }
 
 // =============================================
@@ -202,7 +210,6 @@ function calculateETA(origin, dest, transport, departureStr) {
 async function getWeatherAtTime(coords, targetTime) {
   const cacheKey = `${coords.lat.toFixed(2)},${coords.lon.toFixed(2)}`;
   
-  // 1. Verifica cache
   const cached = weatherCache.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
     const age = Math.round((Date.now() - cached.timestamp) / 1000);
@@ -210,14 +217,12 @@ async function getWeatherAtTime(coords, targetTime) {
     return cached.data;
   }
   
-  // 2. Busca na API
   const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${coords.lat}&lon=${coords.lon}&appid=${OPENWEATHER_API_KEY}&units=metric&lang=pt_br&cnt=40`;
 
   try {
     const response = await fetch(url);
     
     if (!response.ok) {
-      // Se API falhar mas cache expirado existe, usa fallback
       if (cached) {
         console.log('⚠️ API falhou, usando cache expirado');
         return cached.data;
@@ -246,7 +251,6 @@ async function getWeatherAtTime(coords, targetTime) {
         weather: closest.weather
       };
       
-      // Salva no cache
       weatherCache.set(cacheKey, {
         data: result,
         timestamp: Date.now()
@@ -310,7 +314,6 @@ app.post('/api/previsao', async (req, res) => {
   console.log(`\n🔍 ${origin} → ${destination} (${transport})`);
 
   try {
-    // 1. Geolocalização (cache automático)
     const coordsOrigin = await geocode(origin);
     const coordsDest = await geocode(destination);
 
@@ -321,19 +324,15 @@ app.post('/api/previsao', async (req, res) => {
       throw new Error(`Cidade "${destination}" não encontrada.`);
     }
 
-    // 2. Calcular rota
     const route = calculateETA(coordsOrigin, coordsDest, transport, departure);
     console.log(`⏱️ ${route.distance}km | ${route.duration}h`);
 
-    // 3. Previsão do tempo (cache de 30min)
     const weather = await getWeatherAtTime(coordsDest, route.arrivalTime);
     console.log(`🌡️ Chegada: ${Math.round(weather.temp)}°C`);
 
-    // 4. Dica
     const tipKey = getTipKey(weather);
     const tip = getTip(tipKey, lang);
 
-    // 5. Resposta
     res.json({
       success: true,
       origin: coordsOrigin.name,
@@ -341,6 +340,7 @@ app.post('/api/previsao', async (req, res) => {
       transport,
       departureTime: route.departureTime.toISOString(),
       arrivalTime: route.arrivalTime.toISOString(),
+      timezone: getTimezoneFromLongitude(coordsDest.lon),
       route: {
         distance: route.distance,
         duration: route.duration
@@ -364,7 +364,7 @@ app.post('/api/previsao', async (req, res) => {
 });
 
 // =============================================
-// ESTATÍSTICAS DO CACHE (endpoint útil para debug)
+// ESTATÍSTICAS DO CACHE
 // =============================================
 app.get('/api/stats', (req, res) => {
   res.json({
@@ -390,6 +390,7 @@ app.get('/api/stats', (req, res) => {
 // =============================================
 // INICIAR SERVIDOR
 // =============================================
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log('✅ Servidor TempoNoDestino rodando!');
   console.log(`📍 http://localhost:${PORT}`);
