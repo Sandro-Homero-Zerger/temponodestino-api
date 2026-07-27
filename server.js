@@ -233,7 +233,7 @@ function calculateETA(origin, dest, transport, departureStr) {
   const distance = getDistance(origin.lat, origin.lon, dest.lat, dest.lon);
   const speeds = { plane: 800, train: 200, car: 100 };
   let hours = distance / (speeds[transport] || 100);
-  if (transport === 'plane') hours += 3;
+  
   
   let departureTime;
   if (departureStr) {
